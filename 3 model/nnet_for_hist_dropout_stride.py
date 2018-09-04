@@ -1,18 +1,13 @@
 import numpy as np
 import tensorflow as tf
-import threading
-# from fetch_data_histogram import *
-import sys
-import matplotlib.pyplot as plt
-import time
-import scipy.misc
-from datetime import datetime
+
 # datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 class Config():
-    B, W, H, C = 32, 32,32, 9
+    # the following are all class variables
+    B, W, H, C = 32, 32, 32, 9
     train_step = 25000
-    lr = 1e-3
+    lr = 1e-3  # learning rate
     weight_decay = 0.005
 
     drop_out = 0.25
@@ -24,27 +19,36 @@ class Config():
     save_path = '/atlas/u/jiaxuan/data/train_results/final/monthly/'
 
 
-def conv2d(input_data, out_channels, filter_size,stride, in_channels=None, name="conv2d"):
+def conv2d(input_data, out_channels, filter_size, stride, in_channels=None, name="conv2d"):
     if not in_channels:
         in_channels = input_data.get_shape()[-1]
-    with tf.variable_scope(name):
+    with tf.variable_scope(name):  # This defines the variables under the scope name.
         W = tf.get_variable("W", [filter_size, filter_size, in_channels, out_channels],
-                initializer=tf.contrib.layers.variance_scaling_initializer())
+                            initializer=tf.contrib.layers.variance_scaling_initializer())
+        # this CREATES the variable if it doesn't already exist. Better practice than doing tf.Variable().
         b = tf.get_variable("b", [1, 1, 1, out_channels])
-        return tf.nn.conv2d(input_data, W, [1, stride, stride, 1], "SAME") + b
+
+        return tf.nn.conv2d(input=input_data, filter=W, stride=[1, stride, stride, 1], padding="SAME") + b
+    # padding is either "SAME" or "VALID"
+    # filter is the variable to be learnt by the network.
+    # Input and filter are 4D for conv2d.
+    # filter must be the same type as input, and be [filter_height, filter_width, in_channels, out_channels]
 
 
 def pool2d(input_data, ksize, name="pool2d"):
     with tf.variable_scope(name):
-        return tf.nn.max_pool(input_data, [1, ksize, ksize, 1], [1, ksize, ksize, 1], "SAME")
+        return tf.nn.max_pool(input_data, ksize=[1, ksize, ksize, 1], strides=[1, ksize, ksize, 1], padding="SAME")
+    # ksize = list of 4 ints specifying the size of window for each dimension
+    # strides = list of 4 ints specifying the strides in each dimension
 
 
-def conv_relu_batch(input_data, out_channels, filter_size,stride, in_channels=None, name="crb"):
+def conv_relu_batch(input_data, out_channels, filter_size, stride, in_channels=None, name="crb"):
     with tf.variable_scope(name):
         a = conv2d(input_data, out_channels, filter_size, stride, in_channels)
-        b = batch_normalization(a,axes=[0,1,2])
+        b = batch_normalization(a, axes=[0, 1, 2])
         r = tf.nn.relu(b)
         return r
+
 
 def dense(input_data, H, N=None, name="dense"):
     if not N:
@@ -54,14 +58,19 @@ def dense(input_data, H, N=None, name="dense"):
         b = tf.get_variable("b", [1, H])
         return tf.matmul(input_data, W, name="matmul") + b
 
-def batch_normalization(input_data, axes=[0], name="batch"):
+    ##  Note that obviously in tf.get_variable, you don't give the value of the variable - this is supposed to be learnt. What you pass in is the SHAPE.
+
+
+def batch_normalization(input_data, axes=(0,), name="batch"):
     with tf.variable_scope(name):
         mean, variance = tf.nn.moments(input_data, axes, keep_dims=True, name="moments")
         return tf.nn.batch_normalization(input_data, mean, variance, None, None, 1e-6, name="batch")
 
+
 class batch_norm(object):
     """Code modification of http://stackoverflow.com/a/33950177"""
-    def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
+
+    def __init__(self, epsilon=1e-5, momentum=0.9, name="batch_norm"):
         with tf.variable_scope(name):
             self.epsilon = epsilon
             self.momentum = momentum
@@ -69,15 +78,15 @@ class batch_norm(object):
             self.ema = tf.train.ExponentialMovingAverage(decay=self.momentum)
             self.name = name
 
-    def __call__(self, x, axes=[0,1,2], train=True):
+    def __call__(self, x, axes=(0, 1, 2), train=True):
         shape = x.get_shape().as_list()
 
         if train:
             with tf.variable_scope(self.name) as scope:
                 self.beta = tf.get_variable("beta", [shape[-1]],
-                                    initializer=tf.constant_initializer(0.))
+                                            initializer=tf.constant_initializer(0.))
                 self.gamma = tf.get_variable("gamma", [shape[-1]],
-                                    initializer=tf.random_normal_initializer(1., 0.02))
+                                             initializer=tf.random_normal_initializer(1., 0.02))
 
                 batch_mean, batch_var = tf.nn.moments(x, axes, name='moments')
                 ema_apply_op = self.ema.apply([batch_mean, batch_var])
@@ -89,36 +98,36 @@ class batch_norm(object):
             mean, var = self.ema_mean, self.ema_var
 
         normed = tf.nn.batch_norm_with_global_normalization(
-                x, mean, var, self.beta, self.gamma, self.epsilon, scale_after_normalization=True)
+            x, mean, var, self.beta, self.gamma, self.epsilon, scale_after_normalization=True)
 
         return normed
 
-class NeuralModel():
-    def __init__(self, config, name):
 
-        self.x = tf.placeholder(tf.float32, [None, config.W, config.H, config.C], name="x")
-        self.y = tf.placeholder(tf.float32, [None])
-        self.lr = tf.placeholder(tf.float32, [])
-        self.keep_prob = tf.placeholder(tf.float32, [])
+class NeuralModel(object):
+    def __init__(self, config, name):
+        self.x = tf.placeholder(dtype=tf.float32, shape=[None, config.W, config.H, config.C], name="x")
+        self.y = tf.placeholder(dtype=tf.float32, shape=[None])
+        self.lr = tf.placeholder(dtype=tf.float32, shape=[])  # here, shape of [] means that it is a scalar
+        self.keep_prob = tf.placeholder(dtype=tf.float32, shape=[])  # the percentage of node to keep during dropout
         # self.year = tf.placeholder(tf.float32, [None,1])
         # used for max image
         # self.image = tf.Variable(initial_value=init,name="image")
 
-        self.conv1_1 = conv_relu_batch(self.x, 128, 3,1, name="conv1_1")
-        conv1_1_d = tf.nn.dropout(self.conv1_1, self.keep_prob)
-        conv1_2 = conv_relu_batch(conv1_1_d, 128, 3,2, name="conv1_2")
-        conv1_2_d = tf.nn.dropout(conv1_2, self.keep_prob)
+        self.conv1_1 = conv_relu_batch(input_data=self.x, out_channels=128, filter_size=3, stride=1, name="conv1_1")
+        conv1_1_drop = tf.nn.dropout(self.conv1_1, self.keep_prob)
+        conv1_2 = conv_relu_batch(conv1_1_drop, 128, 3, 2, name="conv1_2")
+        conv1_2_drop = tf.nn.dropout(conv1_2, self.keep_prob)
 
-        conv2_1 = conv_relu_batch(conv1_2_d, 256, 3,1, name="conv2_1")
-        conv2_1_d = tf.nn.dropout(conv2_1, self.keep_prob)
-        conv2_2 = conv_relu_batch(conv2_1_d, 256, 3,2, name="conv2_2")
-        conv2_2_d = tf.nn.dropout(conv2_2, self.keep_prob)
+        conv2_1 = conv_relu_batch(conv1_2_drop, 256, 3, 1, name="conv2_1")
+        conv2_1_drop = tf.nn.dropout(conv2_1, self.keep_prob)
+        conv2_2 = conv_relu_batch(conv2_1_drop, 256, 3, 2, name="conv2_2")
+        conv2_2_drop = tf.nn.dropout(conv2_2, self.keep_prob)
 
-        conv3_1 = conv_relu_batch(conv2_2_d, 512, 3,1, name="conv3_1")
+        conv3_1 = conv_relu_batch(conv2_2_drop, 512, 3, 1, name="conv3_1")
         conv3_1_d = tf.nn.dropout(conv3_1, self.keep_prob)
-        conv3_2= conv_relu_batch(conv3_1_d, 512, 3,1, name="conv3_2")
+        conv3_2 = conv_relu_batch(conv3_1_d, 512, 3, 1, name="conv3_2")
         conv3_2_d = tf.nn.dropout(conv3_2, self.keep_prob)
-        conv3_3 = conv_relu_batch(conv3_2_d, 512, 3,2, name="conv3_3")
+        conv3_3 = conv_relu_batch(conv3_2_d, 512, 3, 2, name="conv3_3")
         conv3_3_d = tf.nn.dropout(conv3_3, self.keep_prob)
 
         # conv4_1 = conv_relu_batch(pool3, 512, 3, name="conv4_1")
@@ -142,7 +151,6 @@ class NeuralModel():
         print flattened.get_shape()
         self.fc6 = dense(flattened, 2048, name="fc6")
         # self.fc6 = tf.concat(1, [self.fc6_img,self.year])
-
 
         # fc6_b = batch_normalization(fc6)
         # self.fc6_r = tf.nn.relu(fc6_b)
@@ -172,7 +180,7 @@ class NeuralModel():
             self.conv_B = tf.get_variable('b')
 
         self.loss_reg = tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
-        self.loss = self.loss_err+self.loss_reg
+        self.loss = self.loss_err + self.loss_reg
         # self.loss = self.loss_err
 
         # # learning rate decay
@@ -181,6 +189,3 @@ class NeuralModel():
         #                                            config.lr_decay_step, config.lr_decay_rate, staircase=False)
 
         self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
-
-
-

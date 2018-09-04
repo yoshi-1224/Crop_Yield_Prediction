@@ -2,6 +2,7 @@ import numpy as np
 import scipy.io as io
 import math
 
+
 # from clean_data_county import *
 
 class Fetch_data():
@@ -40,14 +41,14 @@ class Fetch_data():
         self.year = 2012
         # divide data by year
         self.index_train = []
-        self.index_val = []  # validation
+        self.index_validate = []
         for i in range(length):
             if self.data_yield[i, 0] == self.year:  # the first column is year. 2012 data is used for validation
-                self.index_val.append(i)
+                self.index_validate.append(i)
             else:
                 self.index_train.append(i)
         self.index_train = np.array(self.index_train)
-        self.index_val = np.array(self.index_val)
+        self.index_validate = np.array(self.index_validate)
 
         # load mean image
         # try:
@@ -57,6 +58,22 @@ class Fetch_data():
         #     print 'no mean image found'
         #     self.image_mean = self.calc_mean()
         #     # print self.image_mean
+
+    def get_image_data(self, i):
+        year = str(int(self.data_yield[i, 0]))
+        loc1 = str(int(self.data_yield[i, 1]))
+        loc2 = str(int(self.data_yield[i, 2]))
+
+        key = np.array([int(loc1), int(loc2)])
+        index = np.where(np.all(self.locations[:, 0:2].astype('int') == key, axis=1))
+        longitude = self.locations[index, 2]
+        latitude = self.locations[index, 3]
+
+        filename = year + '_' + loc1 + '_' + loc2 + '.npy'
+        image_temp = np.load(self.dir + filename)
+        image_temp = self.filter_timespan(image_temp, 49, 305, 9)
+
+        return year, loc1, loc2, longitude, latitude, image_temp
 
     def calc_mean(self):
         # traverse training data
@@ -69,7 +86,7 @@ class Fetch_data():
             loc1 = str(int(self.data_yield[i, 1]))
             loc2 = str(int(self.data_yield[i, 2]))
 
-            filename = year + '_' + loc1 + '_' + loc2 + '.mat'
+            filename = year + '_' + loc1 + '_' + loc2 + '.mat'  # MatLab file.
             content = io.loadmat(self.dir + filename)
             image_temp = content['image_divide']
             image_temp = self.filter_size(image_temp, 48)
@@ -94,30 +111,30 @@ class Fetch_data():
         return image_mean
 
     def filter_size(self, image_temp, size):
-        return image_temp[0:size, 0:size, :].astype(np.float32)  # must be numpy array right? Like R dataframe
+        return image_temp[0:size, 0:size, :].astype(np.float32)
 
     def filter_abnormal(self, image_temp, min, max):
         image_temp[image_temp < min] = min
         image_temp[image_temp > max] = max
         return image_temp
 
-    def filter_timespan(self, image_temp, start_day, end_day, bands):
+    def filter_timespan(self, image_temp, start_day, end_day, bands_per_image):
         interval = 8  # days, given in the paper.
-        start_index = int(math.floor(start_day / interval)) * bands
-        end_index = int(math.floor(end_day / interval)) * bands
-        if end_index > image_temp.shape[2]:
+        start_index = int(math.floor(start_day / interval)) * bands_per_image
+        end_index = int(math.floor(end_day / interval)) * bands_per_image
+        if end_index > image_temp.shape[2]:  # exceeds the total #bands in the image
             image_temp = np.concatenate((image_temp,
-                                         np.zeros((image_temp.shape[0], image_temp.shape[1],
-                                                   end_index - image_temp.shape[2]))), axis=2)
+                                         np.zeros(shape=(image_temp.shape[0], image_temp.shape[1],
+                                                         end_index - image_temp.shape[2]))), axis=2)
         return image_temp[:, :, start_index:end_index]
 
     def calc_histogram(self, image_temp, bin_seq, bins, times, bands):
-        hist = np.zeros([bins, times, bands])
-        for i in range(image_temp.shape[2]):
-            density, _ = np.histogram(image_temp[:, :, i], bin_seq, density=False)
+        hist = np.zeros(shape=[bins, times, bands])
+        for i in range(image_temp.shape[2]):  # bands
+            frequency, _ = np.histogram(image_temp[:, :, i], bin_seq, density=False)  # density False means frequency.
             # if density.sum()==0:
             #     continue
-            hist[:, i / bands, i % bands] = density / float(density.sum())
+            hist[:, i / bands, i % bands] = frequency / float(frequency.sum())
         print image_temp.shape[2]
         return hist
 
@@ -160,7 +177,7 @@ class Fetch_data():
         if type == 'train':
             index = self.index_train
         elif type == 'validate':
-            index = self.index_val
+            index = self.index_validate
         elif type == 'test':
             index = self.index_test
         index_batch = np.random.choice(index, batch_size)
@@ -192,50 +209,39 @@ class Fetch_data():
         return (np.float32(output_yield), np.float32(output_image))
 
     ## save supervised data
-    # def save_data(self):
-    #     output_image = np.zeros([self.index_all.shape[0], 32, 32, 9])
-    #     output_yield = np.zeros([self.index_all.shape[0]])
-    #     output_year = np.zeros([self.index_all.shape[0]])
-    #     output_locations = np.zeros([self.index_all.shape[0],2])
-    #     output_index = np.zeros([self.index_all.shape[0],2])
+    def save_histogram_supervised(self):
+        output_image = np.zeros([self.index_all.shape[0], 32, 32, 9])
+        output_yield = np.zeros([self.index_all.shape[0]])
+        output_year = np.zeros([self.index_all.shape[0]])
+        output_locations = np.zeros([self.index_all.shape[0],2])
+        output_index = np.zeros([self.index_all.shape[0],2])
 
-    #     for i in self.index_all:
-    #         year = str(int(self.data_yield[i, 0]))
-    #         loc1 = str(int(self.data_yield[i, 1]))
-    #         loc2 = str(int(self.data_yield[i, 2]))
+        for i in self.index_all:
+            year, loc1, loc2, longitude, latitude, image_temp = self.get_image_data(i)
+            print image_temp.shape
 
-    #         key = np.array([int(loc1),int(loc2)])
-    #         index = np.where(np.all(self.locations[:,0:2].astype('int') == key, axis=1))
-    #         longitude = self.locations[index,2]
-    #         latitude = self.locations[index,3]
+            bin_seq = np.linspace(start=1, stop=4999, num=33)  # 50 evenly spaced numbers. Note that 33~32 = bin size.
+            image_temp = self.calc_histogram(image_temp, bin_seq, 32, 32, 9)
+            image_temp[np.isnan(image_temp)] = 0  # shape is (32, 32, 9)
+            # if np.sum(image_temp) < 250:
+            #     print 'broken image', filename
+            #     print np.isnan(image_temp)
 
-    #         filename = year + '_' + loc1 + '_' + loc2 + '.npy'
-    #         image_temp = np.load(self.dir + filename)
-    #         image_temp = self.filter_timespan(image_temp, 49, 305, 9)
-    #         print image_temp.shape
+            output_image[i, :] = image_temp
+            output_yield[i] = self.data_yield[i, 3]
+            output_year[i] = int(year)
+            output_locations[i, 0] = longitude
+            output_locations[i, 1] = latitude
+            output_index[i,:] = np.array([int(loc1),int(loc2)])
+            # print image_temp.shape
+            print i,np.sum(image_temp),year,loc1,loc2
+        np.savez(self.dir+'histogram_all_full.npz',
+                 output_image=output_image,output_yield=output_yield,
+                 output_year=output_year,output_locations=output_locations,output_index=output_index)
+        print 'saved histogram done'
 
-    #         bin_seq = np.linspace(1, 4999, 33)
-    #         image_temp = self.calc_histogram(image_temp, bin_seq ,32, 32, 9)
-    #         image_temp[np.isnan(image_temp)] = 0
-    #         # if np.sum(image_temp) < 250:
-    #         #     print 'broken image', filename
-    #         #     print np.isnan(image_temp)
 
-    #         output_image[i, :] = image_temp
-    #         output_yield[i] = self.data_yield[i, 3]
-    #         output_year[i] = int(year)
-    #         output_locations[i, 0] = longitude
-    #         output_locations[i, 1] = latitude
-    #         output_index[i,:] = np.array([int(loc1),int(loc2)])
-    #         # print image_temp.shape
-    #         print i,np.sum(image_temp),year,loc1,loc2
-    #     np.savez(self.dir+'histogram_all_full.npz',
-    #              output_image=output_image,output_yield=output_yield,
-    #              output_year=output_year,output_locations=output_locations,output_index=output_index)
-    #     print 'save done'
-
-    ## save unsupervised data
-    def save_data(self):
+    def save_unsupervised_data(self):
         count_max = 20000
         count = 0
         output_image = np.zeros([count_max, 32, 32, 9])
@@ -244,18 +250,7 @@ class Fetch_data():
         output_locations = np.zeros([count_max, 2])
         output_index = np.zeros([count_max, 2])
         for i in self.index_all:
-            year = str(int(self.data_yield[i, 0]))
-            loc1 = str(int(self.data_yield[i, 1]))
-            loc2 = str(int(self.data_yield[i, 2]))
-
-            key = np.array([int(loc1), int(loc2)])
-            index = np.where(np.all(self.locations[:, 0:2].astype('int') == key, axis=1))
-            longitude = self.locations[index, 2]
-            latitude = self.locations[index, 3]
-
-            filename = year + '_' + loc1 + '_' + loc2 + '.npy'
-            image_temp = np.load(self.dir + filename)
-            image_temp = self.filter_timespan(image_temp, 49, 305, 9)
+            year, loc1, loc2, longitude, latitude, image_temp = self.get_image_data(i)
             # print image_temp.shape,image_temp.mean()
 
             image_temp = np.reshape(image_temp, (image_temp.shape[0] * image_temp.shape[1], image_temp.shape[2]),
@@ -268,7 +263,7 @@ class Fetch_data():
 
             crop_pixel_count = 200
             j = 0
-            while j < image_temp.shape[0] / crop_pixel_count:
+            while j < (image_temp.shape[0] / crop_pixel_count):
                 image_temp_part = image_temp[j * crop_pixel_count:(j + 1) * crop_pixel_count, :]
                 j += 1
                 bin_seq = np.linspace(1, 4999, 33)
@@ -303,18 +298,23 @@ class Fetch_data():
                 count += 1
         print 'save done'
 
-    # save mean data
     def save_data_mean(self):
-        output_image = np.zeros(shape=[self.index_all.shape[0], 32 * 9])  # shape[0] == length == numRows. 32 = #bins
+        """
+        saves np arrays that contain the mean pixel values for all the images in each band. The result is ONLY USED IN ANALYSIS, not to train the model
+        """
+        output_image = np.zeros(shape=[self.index_all.shape[0], 32 * 9])
+        # shape[0] == length == numRows. 32 = #bins, in Experiments section of the report.
         output_yield = np.zeros(shape=[self.index_all.shape[0]])
         output_year = np.zeros(shape=[self.index_all.shape[0]])
-        output_locations = np.zeros(shape=[self.index_all.shape[0], 2])
+        output_locations = np.zeros(shape=[self.index_all.shape[0], 2])  # 2 location values
         output_index = np.zeros(shape=[self.index_all.shape[0], 2])
 
         for i in self.index_all:  # contains numbers from 0 to length of data
             year = str(int(self.data_yield[i, 0]))
             loc1 = str(int(self.data_yield[i, 1]))
             loc2 = str(int(self.data_yield[i, 2]))
+
+            # locations.csv format: loc1, loc2, longitude, latitude
 
             key = np.array([int(loc1), int(loc2)])
             index = np.where(np.all(self.locations[:, 0:2].astype('int') == key,
@@ -323,14 +323,18 @@ class Fetch_data():
             latitude = self.locations[index, 3]
 
             filename = year + '_' + loc1 + '_' + loc2 + '.npy'
-            image_temp = np.load(self.dir + filename)  # the files were already saved as .npy before this
-            image_temp = self.filter_timespan(image_temp, start_day=49, end_day=305, bands=9)
+            image_temp = np.load(
+                self.dir + filename)  # the files were already saved as .npy before this. We know the year of the image by the filename
+            image_temp = self.filter_timespan(image_temp, start_day=49, end_day=305, bands_per_image=9)
 
-            image_temp = np.sum(image_temp, axis=(0, 1)) / np.count_nonzero(image_temp) * image_temp.shape[2]
-            # image_temp should contain an array of len(bands)
+            image_temp = np.sum(image_temp, axis=(0, 1)) / np.count_nonzero(image_temp) * image_temp.shape[
+                2]  # this multiplication is here because np.count_nonzero counts non-zeros in all dimensions, even though we only sum across height & width dimensions.
+
+            print 'The shape of image_temp after np.sum is %s' % str(image_temp.shape)
+            # image_temp should contain an array of len(bands) * length of time
             image_temp[np.isnan(image_temp)] = 0
 
-            output_image[i, :] = image_temp # 32 * 9
+            output_image[i, :] = image_temp  # TODO: vector of length = 32 * 9 or what?
             output_yield[i] = self.data_yield[i, 3]
             output_year[i] = int(year)
             output_locations[i, 0] = longitude
@@ -338,9 +342,10 @@ class Fetch_data():
             output_index[i, :] = np.array([int(loc1), int(loc2)])
             # print image_temp.shape
             print i, np.sum(image_temp), year, loc1, loc2
-        np.savez(self.dir + 'histogram_all_mean.npz',
+        np.savez(self.dir + 'histogram_all_mean.npz',  ## TODO this file is only used in result analysis, not for training.
                  output_image=output_image, output_yield=output_yield,
-                 output_year=output_year, output_locations=output_locations, output_index=output_index)
+                 output_year=output_year, output_locations=output_locations,
+                 output_index=output_index)  # zipped group of arrays. These arrays can be accessed like a dictionary value with its name as the key.
         print 'save done'
 
 
@@ -361,7 +366,7 @@ if __name__ == '__main__':
     # check_data_integrity()
     # data.calc_mean()
     # i,a=data.next_batch_hist(32,'train')
-    data.save_data_mean()
+    data.save_histogram_supervised()
     # data.save_data()
     # data.save_data_mean()
     # data.save_data('validate')

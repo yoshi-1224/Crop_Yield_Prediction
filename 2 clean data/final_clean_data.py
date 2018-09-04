@@ -1,8 +1,7 @@
 import numpy as np
 import scipy.io as io  # for loading matlab files
 import os
-import \
-    gdal  # Python automatically calls GDALAllRegister() when the gdal module is imported, so can already call gdal.Open
+import gdal  # Python automatically calls GDALAllRegister() when the gdal module is imported, so can already call gdal.Open
 from scipy.ndimage import zoom
 from joblib import Parallel, delayed  # for multi-threading
 from utils import constants
@@ -32,7 +31,7 @@ def check_data_integrity_del(mode='read'):
             if mode == 'read':
                 print filename
             elif mode == 'delete':
-                print 'del'
+                print 'deleting %dth'.format(i)
                 list_del.append(i)
 
     if mode == 'delete':
@@ -56,21 +55,29 @@ def extend_mask(img, num):
     return img
 
 
-# very dirty... but should work
 def merge_image(MODIS_img_list, MODIS_temperature_img_list):
+    """
+    :param MODIS_img_list: list of 3D numpy array with (Height, Width, #bands*#images) #bands/image = 7
+    :param MODIS_temperature_img_list: list of 3D numpy array with (Height, Width, #bands*#images) #bands/image = 2
+    :return: list of images (3D numpy array) with 9 bands each, 7 from img and 2 from temperature_img
+    """
     MODIS_list = []
     for i in range(0, len(MODIS_img_list)):
         img_shape = MODIS_img_list[i].shape  # tuple storing the length of each dimension
         img_temperature_shape = MODIS_temperature_img_list[i].shape
         img_shape_new = (img_shape[0], img_shape[1], img_shape[2] + img_temperature_shape[2])
         # img_shape[0] and [1] should be width-height, same as the dimension of temperature
-        # shape[2] should be the band. 7 + 2 = 9 bands [0:6, 0, 4]
+        # shape[2] should be the band.
+
+        num_bands_per_image = 7
+        num_bands_per_temp_image = 2
+        num_bands_combined = num_bands_per_image + num_bands_per_temp_image
 
         merge = np.empty(img_shape_new)
-        for j in range(0, img_shape[2] / 7):  # 7 is the number of bands? then j is the size of each band?
-            img = MODIS_img_list[i][:, :, (j * 7):(j * 7 + 7)]
-            temperature = MODIS_temperature_img_list[i][:, :, (j * 2):(j * 2 + 2)] # 2 is also the number of bands right?
-            merge[:, :, (j * 9):(j * 9 + 9)] = np.concatenate((img, temperature), axis=2)
+        for i in range(0, img_shape[2] / num_bands_per_image):  # note that here we store multiple images as bands. So every 7 band is an image
+            img = MODIS_img_list[i][:, :, (i * num_bands_per_image):(i * num_bands_per_image + num_bands_per_image)]
+            temperature = MODIS_temperature_img_list[i][:, :, (i * num_bands_per_temp_image):(i * num_bands_per_temp_image + num_bands_per_temp_image)]
+            merge[:, :, (i * num_bands_combined):(i * num_bands_combined + num_bands_combined)] = np.concatenate((img, temperature), axis=2)
         MODIS_list.append(merge)
     return MODIS_list
 
@@ -113,15 +120,14 @@ def preprocess_save_data_parallel(file_name):
         loc2 = int(raw[1])  # not longitude
         # read image
         try:
-            MODIS_img = np.transpose(np.array(gdal.Open(MODIS_path).ReadAsArray(), dtype='uint16'), axes=(1, 2, 0))
+            MODIS_img = np.transpose(np.array(gdal.Open(MODIS_path).ReadAsArray(), dtype='uint16'), axes=(1, 2, 0))  # gives np array with shape (height, width, #bands)
         except ValueError as msg:
             print '%s encountered error' % MODIS_path
             print msg
             return
 
         # read temperature
-        MODIS_temperature_img = np.transpose(np.array(gdal.Open(MODIS_temperature_path).ReadAsArray(), dtype='uint16'),
-                                             axes=(1, 2, 0))  # basically the same code as above, except the path
+        MODIS_temperature_img = np.transpose(np.array(gdal.Open(MODIS_temperature_path).ReadAsArray(), dtype='uint16'), axes=(1, 2, 0))  # basically the same code as above, except the path
 
         # # shift
         # MODIS_temperature_img = MODIS_temperature_img - 12000
@@ -132,15 +138,14 @@ def preprocess_save_data_parallel(file_name):
         # MODIS_temperature_img[MODIS_temperature_img > 5000] = 5000
 
         # read mask
-        MODIS_mask_img = np.transpose(np.array(gdal.Open(MODIS_mask_path).ReadAsArray(), dtype='uint16'),
-                                      axes=(1, 2, 0))
+        MODIS_mask_img = np.transpose(np.array(gdal.Open(MODIS_mask_path).ReadAsArray(), dtype='uint16'), axes=(1, 2, 0))
         # Non-crop = 0, crop = 1
         MODIS_mask_img[MODIS_mask_img != 12] = 0
         MODIS_mask_img[MODIS_mask_img == 12] = 1
 
         # Divide image into years # what does the image contain?
         MODIS_img_list = divide_image(MODIS_img, first=0, step=46 * 7, num=14)
-        MODIS_temperature_img_list = divide_image(MODIS_temperature_img, first=0, step=46 * 2, num=14)
+        MODIS_temperature_img_list = divide_image(MODIS_temperature_img, first=0, step=46 * 2, num=14)  # 46 is as given in the report! 7 and 2 are the bands for image and temp, respectively.
         MODIS_mask_img = extend_mask(MODIS_mask_img, num=3)
         MODIS_mask_img_list = divide_image(MODIS_mask_img, first=0, step=1, num=14)
 
@@ -155,7 +160,7 @@ def preprocess_save_data_parallel(file_name):
         for i in range(0, 14):
             year = i + year_start
             key = np.array([year, loc1, loc2])
-            if np.sum(np.all(data_yield[:, 0:3] == key, axis=1)) > 0:
+            if np.sum(np.all(data_yield[:, 0:3] == key, axis=1)) > 0:  # this is just 2D table.
                 # # detect quality
                 # quality = quality_dector(MODIS_list_masked[i])
                 # if quality < 0.01:
