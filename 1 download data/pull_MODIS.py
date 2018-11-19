@@ -49,39 +49,45 @@ def appendBand_temperature(current, previous):
         ee.Image(current)))  # if previous is None then return current, otherwise add current to previous. (Note: only return current item on first element/iteration)
     return accum
 
-ee.Initialize()  # Google earth-engine API. Authentication etc.
+def main():
+    # we need to surround it in a function because when we import this, the code will run
 
-print 'Initialisation of ee is complete. Now reading csv file'
-locations = pd.read_csv('locations.csv')
+    ee.Initialize()  # Google earth-engine API. Authentication etc.
 
-imgcoll = ee.ImageCollection('MODIS/MOD09A1').filterBounds(ee.Geometry.Rectangle(-106.5, 50, -64, 23))
-img = imgcoll.iterate(appendBand_6)
+    print 'Initialisation of ee is complete. Now reading csv file'
+    locations = pd.read_csv('locations.csv')
 
-for loc1, loc2, lat, lon in locations.values:
-    file_name = '{}_{}'.format(int(loc1), int(loc2))
+    imgcoll = ee.ImageCollection('MODIS/MOD09A1').filterBounds(ee.Geometry.Rectangle(-106.5, 50, -64, 23))
+    img = imgcoll.iterate(appendBand_6)
 
-    offset = 0.11
-    scale = 500
-    crs = 'EPSG:4326'  # crs = "Coordinate Reference System"
+    for loc1, loc2, lat, lon in locations.values:
+        file_name = '{}_{}'.format(int(loc1), int(loc2))
 
-    region = str([
-        [lat - offset, lon + offset],
-        [lat + offset, lon + offset],
-        [lat + offset, lon - offset],
-        [lat - offset, lon - offset]])
+        offset = 0.11
+        scale = 500
+        crs = 'EPSG:4326'  # crs = "Coordinate Reference System"
 
-    print 'region is %s' % region
+        region = str([
+            [lat - offset, lon + offset],
+            [lat + offset, lon + offset],
+            [lat + offset, lon - offset],
+            [lat - offset, lon - offset]])
 
-    while True:
-        try:
-            export_oneimage(img, 'Data_folder', file_name, region, scale, crs)
-        except:
-            print 'retry'
-            time.sleep(10)
-            continue
-        break
+        print 'region is %s' % region
 
-# ee.Initialize()
-# for attr in dir(ee.ImageCollection('MODIS/MOD09A1')):
-#     if "image" in attr.lower():
-#         print attr
+        while True:
+            try:
+                export_oneimage(img, 'Data_folder', file_name, region, scale, crs)
+            except:
+                print 'retry'
+                time.sleep(10)
+                continue
+            break
+
+    # ee.Initialize()
+    # for attr in dir(ee.ImageCollection('MODIS/MOD09A1')):
+    #     if "image" in attr.lower():
+    #         print attr
+
+if __name__ == '__main__':
+    main()

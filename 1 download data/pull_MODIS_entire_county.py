@@ -24,7 +24,7 @@ img = img.max(img_0)
 # img=ee.ImageCollection('LC8_L1T').mosaic()
 
 for loc1, loc2, lat, lon in locations.values:
-    fyile_name = '{}_{}'.format(int(loc1), int(loc2))
+    file_name = '{}_{}'.format(int(loc1), int(loc2))
 
     offset = 0.11
     scale = 500

@@ -8,7 +8,7 @@ MODIS landcover provides classification of land types: cropland, grassland, sea,
 """
 
 ee.Initialize()
-locations = pd.read_csv('locations.csv')
+locations = pd.read_csv('locations_final_1.csv')
 
 imgcoll = ee.ImageCollection('MODIS/051/MCD12Q1') \
     .filterBounds(ee.Geometry.Rectangle(-106.5, 50,-64, 23))

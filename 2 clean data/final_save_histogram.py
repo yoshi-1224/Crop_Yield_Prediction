@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.io as io
 import math
-
+from utils import constants
 
 # from clean_data_county import *
 
@@ -129,8 +129,11 @@ class Fetch_data():
         return image_temp[:, :, start_index:end_index]
 
     def calc_histogram(self, image_temp, bin_seq, bins, times, bands):
+        """
+        this function is used to compute the histogram for ONE IMAGE.
+        """
         hist = np.zeros(shape=[bins, times, bands])
-        for i in range(image_temp.shape[2]):  # bands
+        for i in range(image_temp.shape[2]):  # bands. note that bands include time-dimension here too.
             frequency, _ = np.histogram(image_temp[:, :, i], bin_seq, density=False)  # density False means frequency.
             # if density.sum()==0:
             #     continue
@@ -235,10 +238,10 @@ class Fetch_data():
             output_index[i,:] = np.array([int(loc1),int(loc2)])
             # print image_temp.shape
             print i,np.sum(image_temp),year,loc1,loc2
-        np.savez(self.dir+'histogram_all_full.npz',
-                 output_image=output_image,output_yield=output_yield,
-                 output_year=output_year,output_locations=output_locations,output_index=output_index)
-        print 'saved histogram done'
+        np.savez(self.dir + constants.HISTOGRAM_32_FILENAME,
+                 output_image=output_image, output_yield=output_yield,
+                 output_year=output_year, output_locations=output_locations, output_index=output_index)
+        print 'saved histogram'
 
 
     def save_unsupervised_data(self):

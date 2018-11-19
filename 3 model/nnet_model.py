@@ -3,9 +3,10 @@ import tensorflow as tf
 
 # datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-class Config():
-    # the following are all class variables
-    B, W, H, C = 32, 32, 32, 9
+
+class Config(object):
+    # the following are all class variables, used to set shape of placeholders of NN
+    B, W, H, C = 32, 32, 32, 9  # bins, width, height, channels
     train_step = 25000
     lr = 1e-3  # learning rate
     weight_decay = 0.005
@@ -35,6 +36,7 @@ def conv2d(input_data, out_channels, filter_size, stride, in_channels=None, name
     # filter must be the same type as input, and be [filter_height, filter_width, in_channels, out_channels]
 
 
+# TODO pooling was not performed in the end
 def pool2d(input_data, ksize, name="pool2d"):
     with tf.variable_scope(name):
         return tf.nn.max_pool(input_data, ksize=[1, ksize, ksize, 1], strides=[1, ksize, ksize, 1], padding="SAME")
@@ -58,7 +60,7 @@ def dense(input_data, H, N=None, name="dense"):
         b = tf.get_variable("b", [1, H])
         return tf.matmul(input_data, W, name="matmul") + b
 
-    ##  Note that obviously in tf.get_variable, you don't give the value of the variable - this is supposed to be learnt. What you pass in is the SHAPE.
+    #  Note that obviously in tf.get_variable, you don't give the value of the variable - this is supposed to be learnt. What you pass in is the SHAPE.
 
 
 def batch_normalization(input_data, axes=(0,), name="batch"):
@@ -67,7 +69,7 @@ def batch_normalization(input_data, axes=(0,), name="batch"):
         return tf.nn.batch_normalization(input_data, mean, variance, None, None, 1e-6, name="batch")
 
 
-class batch_norm(object):
+class BatchNorm(object):
     """Code modification of http://stackoverflow.com/a/33950177"""
 
     def __init__(self, epsilon=1e-5, momentum=0.9, name="batch_norm"):
@@ -104,15 +106,17 @@ class batch_norm(object):
 
 
 class NeuralModel(object):
-    def __init__(self, config, name):
-        self.x = tf.placeholder(dtype=tf.float32, shape=[None, config.W, config.H, config.C], name="x")
+    def __init__(self, name):
+        self.x = tf.placeholder(dtype=tf.float32, shape=[None, Config.W, Config.H, Config.C], name="x")
         self.y = tf.placeholder(dtype=tf.float32, shape=[None])
         self.lr = tf.placeholder(dtype=tf.float32, shape=[])  # here, shape of [] means that it is a scalar
-        self.keep_prob = tf.placeholder(dtype=tf.float32, shape=[])  # the percentage of node to keep during dropout
+        # the percentage of node to keep during dropout
+        self.keep_prob = tf.placeholder(dtype=tf.float32, shape=[])
         # self.year = tf.placeholder(tf.float32, [None,1])
         # used for max image
         # self.image = tf.Variable(initial_value=init,name="image")
 
+        #  Note that each function call maps to a layer in CNN. Refer to the paper for the structure of the CNN used here.
         self.conv1_1 = conv_relu_batch(input_data=self.x, out_channels=128, filter_size=3, stride=1, name="conv1_1")
         conv1_1_drop = tf.nn.dropout(self.conv1_1, self.keep_prob)
         conv1_2 = conv_relu_batch(conv1_1_drop, 128, 3, 2, name="conv1_2")
@@ -130,6 +134,7 @@ class NeuralModel(object):
         conv3_3 = conv_relu_batch(conv3_2_d, 512, 3, 2, name="conv3_3")
         conv3_3_d = tf.nn.dropout(conv3_3, self.keep_prob)
 
+        # =============================== unused layers ==================================== #
         # conv4_1 = conv_relu_batch(pool3, 512, 3, name="conv4_1")
         # conv4_1_d = tf.nn.dropout(conv4_1, self.keep_prob)
         # conv4_2 = conv_relu_batch(conv4_1_d, 512, 3, name="conv4_2")
@@ -149,7 +154,7 @@ class NeuralModel(object):
         # flattened_d = tf.nn.dropout(flattened, 0.25)
 
         print flattened.get_shape()
-        self.fc6 = dense(flattened, 2048, name="fc6")
+        self.fc6 = dense(flattened, 2048, name="fc6")  # 2048 = number of input neurons in the fully-connected layer.
         # self.fc6 = tf.concat(1, [self.fc6_img,self.year])
 
         # fc6_b = batch_normalization(fc6)
@@ -165,6 +170,7 @@ class NeuralModel(object):
         self.logits = tf.squeeze(dense(self.fc6, 1, name="dense"))
         # l2
         self.loss_err = tf.nn.l2_loss(self.logits - self.y)
+
         # l1
         # self.loss_err = tf.reduce_sum(tf.abs(self.logits - self.y))
         # average

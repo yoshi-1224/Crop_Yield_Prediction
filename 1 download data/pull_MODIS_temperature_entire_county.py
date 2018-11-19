@@ -4,7 +4,7 @@ import pandas as pd
 from pull_MODIS import export_oneimage, appendBand_temperature
 
 ee.Initialize()
-locations = pd.read_csv('locations_major.csv')
+locations = pd.read_csv('locations_final_1.csv')
 
 county_region = ee.FeatureCollection('ft:18Ayj5e7JxxtTPm1BdMnnzWbZMrxMB49eqGDTsaSp')
 
@@ -44,7 +44,8 @@ for loc1, loc2, lat, lon in locations.values:
     while True:
         try:
             export_oneimage(img, 'Data_county_temperature', file_name, region, scale, crs)
-        except:
+        except Exception as e:
+            print e
             print 'retry'
             time.sleep(10)
             continue

@@ -3,7 +3,6 @@ from GP_crop_v3 import *
 import logging
 
 
-
 if __name__ == "__main__":
     predict_year = 2013
     logging.basicConfig(filename='train_for_hist_alldata'+str(predict_year)+'.log',level=logging.DEBUG)
@@ -57,7 +56,7 @@ if __name__ == "__main__":
     image_validate=image_all[index_validate]
     yield_validate=yield_all[index_validate]
 
-    model= NeuralModel(config,'net')
+    model= LSTM_NN(config, 'net')
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.22)
     # Launch the graph.

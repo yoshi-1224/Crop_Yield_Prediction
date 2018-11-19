@@ -4,7 +4,7 @@ import pandas as pd
 from pull_MODIS import export_oneimage, appendBand_0
 
 ee.Initialize()
-locations = pd.read_csv('locations_final.csv')
+locations = pd.read_csv('locations_final_1.csv')
 
 county_region = ee.FeatureCollection('ft:1S4EB6319wWW2sWQDPhDvmSBIVrD3iEmCLYB7nMM')
 
